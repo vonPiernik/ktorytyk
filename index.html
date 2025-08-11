@@ -54,11 +54,12 @@
         }
         
         #moon-phase-container {
-            min-height: 128px;
+
         }
 
         #moon-phase-image {
-            max-width: 128px;
+            width: 400px;
+            max-width: 100%;
             height: auto;
         }
 
@@ -153,14 +154,10 @@
         </div>
 
         <div id="ticks-container"></div>
-        
-        <footer>
-            Dane o pełniach: <a href="https://craigchamberlain.github.io/moon-data/" target="_blank" rel="noopener">moon-data</a>. Faza księżyca: <a href="https://www.astronomyapi.com" target="_blank" rel="noopener">AstronomyAPI</a>
-        </footer>
+
     </main>
 
     <script>
-        // UWAGA: Zastąp poniższe wartości swoimi kluczami z AstronomyAPI
         const APPLICATION_ID = '1a0e1c50-c8de-49ac-b4a7-09725c7f3f49';
         const APPLICATION_SECRET = '43a08f3eb8f330e4501aafcd2e26741577210908d4def5acc45646cea2cd4ad1e1377535bfac5e0f214778675cea8883c9a85a85f27158f0f279f93f3c724ff26bb15e46f0be0659d59ea7607417316a4fc050473f82e9e67134b3ae3c5ff46257c9af34e9597e024960b2d1b5d4b025';
 
@@ -203,10 +200,11 @@
                     method: 'POST',
                     headers: { ...authHeader, 'Content-Type': 'application/json' },
                     body: JSON.stringify({
+                        format: 'svg',
                         style: {
-                            moonStyle: 'default',
-                            backgroundStyle: 'stars',
-                            backgroundColor: '#0a0a1a'
+                            moonStyle: 'shaded',
+                            backgroundStyle: 'solid',
+                            backgroundColor: '#1a1a2a'
                         },
                         observer: {
                             latitude: 52.2297, // Warszawa
@@ -271,30 +269,66 @@
             ticksContainer.innerHTML = ''; // Wyczyść loader/poprzednie dane
             const now = new Date();
             let nextFullMoonDate = null;
+            let currentTickIndex = -1;
+            let ticksToDisplay = [];
 
+            // First pass: create all ticks and identify current tick
             for (let i = 0; i < fullMoonDates.length - 1; i++) {
                 const start = new Date(fullMoonDates[i]);
                 const end = new Date(fullMoonDates[i + 1]);
 
-                const tickElement = document.createElement('div');
-                tickElement.classList.add('tick');
-
                 const isCurrent = now >= start && now < end;
                 if (isCurrent) {
-                    tickElement.classList.add('current-tick');
+                    currentTickIndex = i;
                 }
                 
                 if (end > now && !nextFullMoonDate) {
                     nextFullMoonDate = end;
                 }
 
+                ticksToDisplay.push({
+                    index: i,
+                    start: start,
+                    end: end,
+                    isCurrent: isCurrent,
+                    isFuture: start > now
+                });
+            }
+
+            // Filter ticks: all historical + current + only one future (if exists)
+            let filteredTicks = [];
+            let futureTickAdded = false;
+
+            for (let tick of ticksToDisplay) {
+                if (!tick.isFuture || tick.isCurrent) {
+                    // Add all historical and current ticks
+                    filteredTicks.push(tick);
+                } else if (tick.isFuture && !futureTickAdded) {
+                    // Add only the first future tick (the one immediately after current)
+                    filteredTicks.push(tick);
+                    futureTickAdded = true;
+                }
+            }
+
+            // Sort in reverse chronological order (newest first)
+            filteredTicks.sort((a, b) => b.start - a.start);
+
+            // Render the filtered and sorted ticks
+            for (let tick of filteredTicks) {
+                const tickElement = document.createElement('div');
+                tickElement.classList.add('tick');
+
+                if (tick.isCurrent) {
+                    tickElement.classList.add('current-tick');
+                }
+
                 const numberElement = document.createElement('div');
                 numberElement.classList.add('tick-number');
-                numberElement.textContent = `Tyk #${i + 1}`;
+                numberElement.textContent = `Tyk #${tick.index + 1}`;
 
                 const dateElement = document.createElement('div');
                 dateElement.classList.add('tick-date');
-                dateElement.textContent = `${formatDateShort(start)} - ${formatDateShort(end)}`;
+                dateElement.textContent = `${formatDateShort(tick.start)} - ${formatDateShort(tick.end)}`;
 
                 tickElement.appendChild(numberElement);
                 tickElement.appendChild(dateElement);
