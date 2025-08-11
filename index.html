@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Który Tyk Księżycowy?</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #0a0a1a;
+            --text-color: #f0f0f0;
+            --primary-color: #1a1a2a;
+            --accent-color: #ffd700;
+            --accent-color-secondary: #c0c0c0;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            font-family: 'Roboto', sans-serif;
+            margin: 0;
+            padding: 2rem;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+
+        main {
+            width: 100%;
+            max-width: 800px;
+            text-align: center;
+        }
+
+        h1 {
+            color: var(--accent-color);
+            font-weight: 300;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+        }
+
+        #status-container {
+            background-color: var(--primary-color);
+            border-radius: 15px;
+            padding: 2rem;
+            margin-bottom: 2rem;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 1rem;
+            box-shadow: 0 0 20px rgba(255, 215, 0, 0.1);
+        }
+        
+        #moon-phase-container {
+            min-height: 128px;
+        }
+
+        #moon-phase-image {
+            max-width: 128px;
+            height: auto;
+        }
+
+        #next-full-moon {
+            font-size: 1.2rem;
+            font-weight: 400;
+        }
+        
+        #next-full-moon strong {
+            color: var(--accent-color);
+            font-weight: 700;
+        }
+
+        #ticks-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 1rem;
+        }
+
+        .tick {
+            background-color: var(--primary-color);
+            padding: 1.5rem;
+            border-radius: 10px;
+            border: 2px solid transparent;
+            transition: all 0.3s ease;
+        }
+
+        .tick.current-tick {
+            border-color: var(--accent-color);
+            box-shadow: 0 0 15px rgba(255, 215, 0, 0.3);
+        }
+
+        .tick-number {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--accent-color-secondary);
+        }
+
+        .tick-date {
+            font-size: 0.9rem;
+            margin-top: 0.5rem;
+            color: #aaa;
+        }
+        
+        .loader {
+            width: 48px;
+            height: 48px;
+            border: 5px solid var(--text-color);
+            border-bottom-color: var(--accent-color);
+            border-radius: 50%;
+            display: inline-block;
+            box-sizing: border-box;
+            animation: rotation 1s linear infinite;
+        }
+
+        @keyframes rotation {
+            0% {
+                transform: rotate(0deg);
+            }
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+        
+        footer {
+            margin-top: 2rem;
+            font-size: 0.8rem;
+            color: #666;
+        }
+        
+        footer a {
+            color: var(--accent-color-secondary);
+            text-decoration: none;
+        }
+        
+        footer a:hover {
+            text-decoration: underline;
+        }
+
+    </style>
+</head>
+<body>
+
+    <main>
+        <h1>Który Tyk Księżycowy?</h1>
+
+        <div id="status-container">
+            <div id="moon-phase-container">
+                 <div class="loader"></div>
+            </div>
+            <div id="next-full-moon"></div>
+        </div>
+
+        <div id="ticks-container"></div>
+        
+        <footer>
+            Dane o pełniach: <a href="https://craigchamberlain.github.io/moon-data/" target="_blank" rel="noopener">moon-data</a>. Faza księżyca: <a href="https://www.astronomyapi.com" target="_blank" rel="noopener">AstronomyAPI</a>
+        </footer>
+    </main>
+
+    <script>
+        // UWAGA: Zastąp poniższe wartości swoimi kluczami z AstronomyAPI
+        const APPLICATION_ID = '1a0e1c50-c8de-49ac-b4a7-09725c7f3f49';
+        const APPLICATION_SECRET = '43a08f3eb8f330e4501aafcd2e26741577210908d4def5acc45646cea2cd4ad1e1377535bfac5e0f214778675cea8883c9a85a85f27158f0f279f93f3c724ff26bb15e46f0be0659d59ea7607417316a4fc050473f82e9e67134b3ae3c5ff46257c9af34e9597e024960b2d1b5d4b025';
+
+        const statusContainer = document.getElementById('status-container');
+        const moonPhaseContainer = document.getElementById('moon-phase-container');
+        const nextFullMoonElement = document.getElementById('next-full-moon');
+        const ticksContainer = document.getElementById('ticks-container');
+
+        const authString = btoa(`${APPLICATION_ID}:${APPLICATION_SECRET}`);
+        const authHeader = {
+            'Authorization': `Basic ${authString}`
+        };
+
+        function formatDate(date) {
+            return date.toLocaleString('pl-PL', {
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        }
+        
+        function formatDateShort(date) {
+             return date.toLocaleDateString('pl-PL', {
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit'
+            });
+        }
+
+        async function getMoonPhaseImage() {
+            if (!APPLICATION_ID || APPLICATION_ID === 'YOUR_APPLICATION_ID') {
+                moonPhaseContainer.innerHTML = '<p>Wprowadź klucze API, aby zobaczyć fazę księżyca.</p>';
+                return;
+            }
+            
+            try {
+                const response = await fetch('https://api.astronomyapi.com/api/v2/studio/moon-phase', {
+                    method: 'POST',
+                    headers: { ...authHeader, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        style: {
+                            moonStyle: 'default',
+                            backgroundStyle: 'stars',
+                            backgroundColor: '#0a0a1a'
+                        },
+                        observer: {
+                            latitude: 52.2297, // Warszawa
+                            longitude: 21.0122,
+                            date: new Date().toISOString().slice(0, 10)
+                        },
+                        view: {
+                            type: 'portrait-simple',
+                            orientation: 'north-up'
+                        }
+                    })
+                });
+                const data = await response.json();
+                const imageUrl = data.data.imageUrl;
+                
+                moonPhaseContainer.innerHTML = `<img id="moon-phase-image" src="${imageUrl}" alt="Aktualna faza księżyca">`;
+
+            } catch (error) {
+                console.error('Błąd podczas pobierania fazy księżyca:', error);
+                moonPhaseContainer.innerHTML = '<p>Nie udało się załadować fazy księżyca.</p>';
+            }
+        }
+
+        async function fetchFullMoons() {
+            const startYear = 2023;
+            const currentYear = new Date().getFullYear();
+            const yearsToFetch = [];
+            for (let year = startYear; year <= currentYear + 1; year++) {
+                yearsToFetch.push(year);
+            }
+
+            const promises = yearsToFetch.map(year => 
+                fetch(`https://craigchamberlain.github.io/moon-data/api/moon-phase-data/${year}/`).then(res => res.json())
+            );
+
+            try {
+                const results = await Promise.all(promises);
+                let allFullMoonDates = [];
+
+                for (const yearData of results) {
+                    // Corrected logic: yearData is the array, properties are capitalized
+                    const fullMoons = yearData.filter(d => d.Phase === 2);
+                    const dates = fullMoons.map(d => new Date(d.Date + 'Z')); // Append Z to treat as UTC
+                    allFullMoonDates.push(...dates);
+                }
+                
+                // Filter out dates before our absolute start
+                const firstTickStartDate = new Date('2023-09-29T00:00:00Z');
+                const relevantDates = allFullMoonDates.filter(d => d >= firstTickStartDate);
+                
+                relevantDates.sort((a, b) => a - b);
+
+                processAndRenderTicks(relevantDates.map(d => d.toISOString()));
+
+            } catch (error) {
+                console.error('Błąd podczas pobierania danych o pełniach:', error);
+                ticksContainer.innerHTML = '<p>Wystąpił błąd podczas ładowania danych z nowego źródła. Spróbuj ponownie później.</p>';
+            }
+        }
+
+        function processAndRenderTicks(fullMoonDates) {
+            ticksContainer.innerHTML = ''; // Wyczyść loader/poprzednie dane
+            const now = new Date();
+            let nextFullMoonDate = null;
+
+            for (let i = 0; i < fullMoonDates.length - 1; i++) {
+                const start = new Date(fullMoonDates[i]);
+                const end = new Date(fullMoonDates[i + 1]);
+
+                const tickElement = document.createElement('div');
+                tickElement.classList.add('tick');
+
+                const isCurrent = now >= start && now < end;
+                if (isCurrent) {
+                    tickElement.classList.add('current-tick');
+                }
+                
+                if (end > now && !nextFullMoonDate) {
+                    nextFullMoonDate = end;
+                }
+
+                const numberElement = document.createElement('div');
+                numberElement.classList.add('tick-number');
+                numberElement.textContent = `Tyk #${i + 1}`;
+
+                const dateElement = document.createElement('div');
+                dateElement.classList.add('tick-date');
+                dateElement.textContent = `${formatDateShort(start)} - ${formatDateShort(end)}`;
+
+                tickElement.appendChild(numberElement);
+                tickElement.appendChild(dateElement);
+                ticksContainer.appendChild(tickElement);
+            }
+            
+            if (nextFullMoonDate) {
+                nextFullMoonElement.innerHTML = `Następna pełnia: <strong>${formatDate(nextFullMoonDate)}</strong>`;
+            } else {
+                 // Jeśli ostatnia pobrana pełnia jest w przeszłości, poszukajmy następnej
+                const lastKnownFullMoon = new Date(fullMoonDates[fullMoonDates.length - 1]);
+                if (lastKnownFullMoon < now) {
+                    nextFullMoonElement.innerHTML = 'Szukanie daty następnej pełni...';
+                    // W prawdziwej aplikacji można by tu wywołać kolejne zapytanie do API o przyszłe daty
+                } else {
+                    nextFullMoonElement.innerHTML = `Następna pełnia: <strong>${formatDate(lastKnownFullMoon)}</strong>`;
+                }
+            }
+        }
+
+        // Inicjalizacja
+        document.addEventListener('DOMContentLoaded', () => {
+            getMoonPhaseImage();
+            fetchFullMoons();
+        });
+    </script>
+
+</body>
+</html>
